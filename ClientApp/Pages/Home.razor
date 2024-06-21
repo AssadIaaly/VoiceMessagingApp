@@ -1,0 +1,22 @@
+﻿@page "/"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<MudPaper Class="pa-4">
+    <MudText Typo="Typo.h5">Welcome to the Home Page</MudText>
+</MudPaper>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (!user.Identity.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login");
+        }
+    }
+}

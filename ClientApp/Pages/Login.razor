@@ -1,0 +1,35 @@
+@page "/login"
+@inject AuthService AuthService
+@inject CustomAuthStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@using MudBlazor
+
+<MudPaper Class="pa-4">
+    <MudText Typo="Typo.h5">Login</MudText>
+    <MudTextField @bind-Value="model.Email" Label="Email" Required="true" />
+    <MudTextField @bind-Value="model.Password" Label="Password" InputType="InputType.Password" Required="true" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoginUser">Login</MudButton>
+</MudPaper>
+
+@code {
+    private LoginModel model = new LoginModel();
+
+    private async Task LoginUser()
+    {
+        var success = await AuthService.Login(model.Email, model.Password);
+        if (success)
+        {
+            Navigation.NavigateTo("/");
+        }
+        else
+        {
+            // Handle error
+        }
+    }
+
+    private class LoginModel
+    {
+        public string Email { get; set; }
+        public string Password { get; set; }
+    }
+}

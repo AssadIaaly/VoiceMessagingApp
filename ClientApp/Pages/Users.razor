@@ -1,0 +1,94 @@
+@page "/users"
+@using Blazored.LocalStorage
+@inject UserService UserService
+@inject IJSRuntime JSRuntime
+@inject ILocalStorageService LocalStorage
+@inject NavigationManager NavigationManager
+
+<MudPaper Class="pa-4">
+    <MudText Typo="Typo.h5">Online Users</MudText>
+    <MudList>
+        @foreach (var user in UserService.ConnectedUsers)
+        {
+            <MudListItem>
+                <MudGrid>
+                    <MudItem xs="8">
+                        <MudText>@user</MudText>
+                    </MudItem>
+                    <MudItem xs="4" Class="d-flex justify-end">
+                        <MudIconButton Icon="@Icons.Material.Filled.Call" Size="Size.Small" @onclick="() => ConnectToUser(user)"/>
+                    </MudItem>
+                </MudGrid>
+            </MudListItem>
+        }
+    </MudList>
+
+    <div class="video-container">
+        <video id="localVideo" autoplay playsinline></video>
+        <video id="remoteVideo" autoplay playsinline></video>
+    </div>
+
+    @if (isInCall)
+    {
+        <MudButton Color="Color.Error" OnClick="EndCall">End Call</MudButton>
+    }
+</MudPaper>
+
+@code {
+    private bool isInCall = false;
+    private string currentCallUser = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserService.OnUsersUpdated += StateHasChanged;
+        UserService.OnCallStarted += HandleCallStarted;
+        UserService.OnCallEnded += HandleCallEnded;
+        await UserService.InitializeAsync(NavigationManager.BaseUri, LocalStorage);
+        await JSRuntime.InvokeVoidAsync("initializeUserService", DotNetObjectReference.Create(UserService));
+    }
+
+    private async Task ConnectToUser(string userName)
+    {
+        Console.WriteLine($"Connecting to {userName}");
+        await UserService.ConnectToUser(userName);
+        currentCallUser = userName;
+        isInCall = true;
+    }
+
+    private async Task EndCall()
+    {
+        Console.WriteLine("Ending call");
+        if (!string.IsNullOrEmpty(currentCallUser))
+        {
+            await UserService.EndCall(currentCallUser);
+            currentCallUser = null;
+        }
+
+        await JSRuntime.InvokeVoidAsync("webrtc.endCall");
+        isInCall = false;
+    }
+
+    private void HandleCallStarted(string userName)
+    {
+        Console.WriteLine($"Call started with {userName}");
+        currentCallUser = userName;
+        isInCall = true;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleCallEnded(string userName)
+    {
+        Console.WriteLine($"Call ended by {userName}");
+        currentCallUser = null;
+        isInCall = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        UserService.OnUsersUpdated -= StateHasChanged;
+        UserService.OnCallStarted -= HandleCallStarted;
+        UserService.OnCallEnded -= HandleCallEnded;
+    }
+
+}

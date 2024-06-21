@@ -1,0 +1,6 @@
+@SipService_HostAddress = http://localhost:5035
+
+GET {{SipService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

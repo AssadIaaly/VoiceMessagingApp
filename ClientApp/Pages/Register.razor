@@ -1,0 +1,34 @@
+@page "/register"
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+@using MudBlazor
+
+<MudPaper Class="pa-4">
+    <MudText Typo="Typo.h5">Register</MudText>
+    <MudTextField @bind-Value="model.Email" Label="Email" Required="true" />
+    <MudTextField @bind-Value="model.Password" Label="Password" InputType="InputType.Password" Required="true" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RegisterUser">Register</MudButton>
+</MudPaper>
+
+@code {
+private RegisterModel model = new RegisterModel();
+
+private async Task RegisterUser()
+{
+var success = await AuthService.Register(model.Email, model.Password);
+if (success)
+{
+Navigation.NavigateTo("/login");
+}
+else
+{
+// Handle error
+}
+}
+
+private class RegisterModel
+{
+public string Email { get; set; }
+public string Password { get; set; }
+}
+}

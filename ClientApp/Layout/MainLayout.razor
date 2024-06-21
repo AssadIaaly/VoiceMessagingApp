@@ -1,0 +1,63 @@
+﻿@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@inject AuthService AuthService
+
+
+<MudThemeProvider/>
+<MudDialogProvider/>
+<MudSnackbarProvider/>
+
+<MudLayout>
+    <MudAppBar Color="Color.Primary" Elevation="4">
+        <MudText Typo="Typo.h6">Voice Messaging App</MudText>
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Filled.Home" OnClick="NavigateToHome" />
+        <MudIconButton Icon="@Icons.Material.Filled.PersonAdd" OnClick="NavigateToRegister" />
+        <AuthorizeView>
+            <Authorized>
+                <MudIconButton Icon="@Icons.Material.Filled.People" OnClick="NavigateToUsers" />
+                <MudIconButton Icon="@Icons.Material.Filled.Logout" OnClick="Logout"/>
+            </Authorized>
+            <NotAuthorized>
+                <MudIconButton Icon="@Icons.Material.Filled.Login" OnClick="NavigateToLogin"/>
+            </NotAuthorized>
+        </AuthorizeView>
+    </MudAppBar>
+
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Medium">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    
+    private void NavigateToHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    private void NavigateToRegister()
+    {
+        Navigation.NavigateTo("/register");
+    }
+
+    private void NavigateToLogin()
+    {
+        Navigation.NavigateTo("/login");
+    }
+
+    private void Logout(MouseEventArgs obj)
+    {
+        AuthService.Logout();
+        StateHasChanged();
+        Navigation.NavigateTo("/login");
+        
+    }
+    private void NavigateToUsers()
+    {
+        Navigation.NavigateTo("/users");
+    }
+
+}
