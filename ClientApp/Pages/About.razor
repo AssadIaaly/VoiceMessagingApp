@@ -1,0 +1,32 @@
+@page "/about"
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+
+<PageTitle>About</PageTitle>
+
+<h3>About</h3>
+
+<EditForm Model="userInfo" OnSubmit="HandleValidSubmit">
+    <DataAnnotationsValidator/>
+    <ValidationSummary/>
+
+    <MudTextField @bind-Value="userInfo.Name" Label="Name" Required="true"/>
+
+    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Class="ml-auto">Save</MudButton>
+</EditForm>
+
+@code {
+    private UserUpdateInfo userInfo = new UserUpdateInfo();
+
+    protected override async Task OnInitializedAsync()
+    {
+        userInfo = await AuthService.GetUserInfo();
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        await AuthService.UpdateUserInfo(userInfo);
+        Navigation.NavigateTo("/");
+    }
+
+}

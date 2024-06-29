@@ -29,8 +29,12 @@ public class CustomAuthStateProvider : AuthenticationStateProvider
         return new AuthenticationState(user);
     }
 
-    public async Task NotifyUserAuthentication(string token)
+    public async Task NotifyUserAuthentication(string? token)
     {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return;
+        }
         var identity = new ClaimsIdentity(ParseClaimsFromJwt(token), "jwt");
         var user = new ClaimsPrincipal(identity);
 

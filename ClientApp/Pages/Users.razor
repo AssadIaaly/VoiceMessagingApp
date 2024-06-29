@@ -1,86 +1,226 @@
 @page "/users"
-@using Blazored.LocalStorage
+@using System.Reflection.Metadata
 @inject UserService UserService
 @inject IJSRuntime JSRuntime
-@inject ILocalStorageService LocalStorage
-@inject NavigationManager NavigationManager
+@inject NavigationManager Navigation
+@inject Blazored.LocalStorage.ILocalStorageService LocalStorage
+<div id="connectionType"></div>
+<div class="video-container" id="videoContainer">
+    <video id="localVideo" autoplay playsinline class="local-video"></video>
+    <video id="remoteVideo" autoplay playsinline class="remote-video"></video>
+    @if (isInCall)
+    {
+        <div class="toolbar" id="toolbar">
+            <MudIconButton Icon="@Icons.Material.Filled.VideocamOff" Size="Size.Small" Id="stopVideoButton" @onclick="StopVideo" />
+            <MudIconButton Icon="@Icons.Material.Filled.MicOff" Size="Size.Small" Id="muteAudioButton" @onclick="MuteAudio" />
+            <MudIconButton Icon="@Icons.Material.Filled.CameraAlt" Size="Size.Small" @onclick="TakeScreenshot" />
+            <MudIconButton Icon="@Icons.Material.Filled.ScreenShare" Size="Size.Small" Id="shareScreenButton" @onclick="ShareScreen" />
+            <MudIconButton Icon="@Icons.Material.Filled.StopScreenShare" Size="Size.Small" Id="stopScreenShareButton" @onclick="StopScreenShare" />
+            <MudIconButton Icon="@Icons.Material.Filled.Fullscreen" Size="Size.Small" Id="fullscreenButton" @onclick="ToggleFullScreen" />
+            <MudIconButton Icon="@Icons.Material.Filled.CallEnd" Color="Color.Error" Size="Size.Small" @onclick="EndCall" />
+        </div>
+    }
+</div>
 
 <MudPaper Class="pa-4">
     <MudText Typo="Typo.h5">Online Users</MudText>
     <MudList>
-        @foreach (var user in UserService.ConnectedUsers)
+        @foreach (var user in UserService.ConnectedUsers.Distinct())
         {
-            <MudListItem>
-                <MudGrid>
-                    <MudItem xs="8">
-                        <MudText>@user</MudText>
-                    </MudItem>
-                    <MudItem xs="4" Class="d-flex justify-end">
-                        <MudIconButton Icon="@Icons.Material.Filled.Call" Size="Size.Small" @onclick="() => ConnectToUser(user)"/>
-                    </MudItem>
-                </MudGrid>
-            </MudListItem>
+            foreach (var userInfo in user)
+            {
+                <MudListItem>
+                    <MudGrid>
+                        <MudItem xs="8">
+                            <MudText>@(string.IsNullOrEmpty(userInfo.Name) ? userInfo.UserName : userInfo.Name) (Client Type: @userInfo.ClientType)</MudText>
+                        </MudItem>
+                        <MudItem xs="4" Class="d-flex justify-end">
+                            @if (!isInCall && UserService.CurrentUser.UserName != userInfo.UserName && (callingUser != userInfo.UserName || receivingUser != userInfo.UserName))
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Call" Size="Size.Small" @onclick="() => { useVideo = false; InitiateCall(userInfo); }"/>
+                                <MudIconButton Icon="@Icons.Material.Filled.VideoCall" Size="Size.Small" @onclick="() => { useVideo = true; InitiateCall(userInfo); }"/>
+                            }
+                        </MudItem>
+                    </MudGrid>
+                </MudListItem>
+            }
+            
         }
     </MudList>
 
-    <div class="video-container">
-        <video id="localVideo" autoplay playsinline></video>
-        <video id="remoteVideo" autoplay playsinline></video>
-    </div>
-
-    @if (isInCall)
+    @if (isCalling)
     {
-        <MudButton Color="Color.Error" OnClick="EndCall">End Call</MudButton>
+        <MudText Typo="Typo.subtitle1" Color="Color.Error">@callMessage</MudText>
     }
+
+    <MudDialog @bind-IsVisible="showIncomingCallDialog">
+        <DialogContent>
+            <MudText Typo="Typo.h6">@incomingCallMessage</MudText>
+            @if (requestVideoCall)
+            {
+            <MudCheckBox @bind-Value="useVideo">Use Video</MudCheckBox>
+            }
+        </DialogContent>
+        <DialogActions>
+            <MudButton Color="Color.Primary" OnClick="AnswerCall">Answer</MudButton>
+            <MudButton Color="Color.Error" OnClick="RejectCall">Reject</MudButton>
+        </DialogActions>
+    </MudDialog>
 </MudPaper>
 
 @code {
     private bool isInCall = false;
-    private string currentCallUser = null;
+    private bool isCalling = false;
+    private bool showIncomingCallDialog = false;
+    private bool requestVideoCall = false;
+    private bool useVideo = false;
+    private string receivingUser = null;
+    private string callingUser = null;
+    private string callMessage = null;
+    private string incomingCallMessage = null;
+    private string _callingClientConnectionid = null;
+    private string _answeringClientConnectionid = null;
 
     protected override async Task OnInitializedAsync()
     {
         UserService.OnUsersUpdated += StateHasChanged;
         UserService.OnCallStarted += HandleCallStarted;
         UserService.OnCallEnded += HandleCallEnded;
-        await UserService.InitializeAsync(NavigationManager.BaseUri, LocalStorage);
+        UserService.OnIncomingCall += HandleIncomingCall;
+        UserService.OnCallRejected += HandleCallRejected;
+        UserService.OnCallAnswered += HandleCallAnswered;
+        //await UserService.InitializeAsync(Navigation.BaseUri, LocalStorage);
         await JSRuntime.InvokeVoidAsync("initializeUserService", DotNetObjectReference.Create(UserService));
     }
 
-    private async Task ConnectToUser(string userName)
+    private void HandleCallAnswered(string username, string answeringClientConnectionId)
     {
-        Console.WriteLine($"Connecting to {userName}");
-        await UserService.ConnectToUser(userName);
-        currentCallUser = userName;
+        if (username == UserService.CurrentUser.UserName)
+        {
+            showIncomingCallDialog = false;
+        }
+        if (answeringClientConnectionId == UserService.CurrentUser.ConnectionId)
+        {
+            _answeringClientConnectionid = answeringClientConnectionId;
+            Console.WriteLine($"Call answered by: {username}, connectionId: {answeringClientConnectionId}");
+        }
+        else
+        {
+            _answeringClientConnectionid = null;
+
+        }
+        callMessage = null;
+        isCalling = false;
+        callingUser = null;
+        _callingClientConnectionid = null;
+        receivingUser = null;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleCallRejected(string caller)
+    {
+        if (caller == UserService.CurrentUser.UserName)
+        {
+            showIncomingCallDialog = false;
+        }
+        callMessage = null;
+        isCalling = false;
+        callingUser = null;
+        _callingClientConnectionid = null;
+        receivingUser = null;
+        UserService.ClearCallingClientConnectionId();
+        UserService.ClearAnsweringClientConnectionId();
+        InvokeAsync(StateHasChanged);
+       
+    }
+
+    private async Task InitiateCall(UserInfo user)
+    {
+        var username = user.UserName;
+        Console.WriteLine($"Connecting to {username}");
+        isCalling = true;
+        receivingUser = username;
+        callingUser = UserService.CurrentUser.UserName;
+        callMessage = $"Calling {username}...";
+        await UserService.InitiateCall(username, useVideo);
+    }
+
+    private async Task AnswerCall()
+    {
+        Console.WriteLine($"Answering call from {callingUser}");
         isInCall = true;
+        isCalling = false;
+        showIncomingCallDialog = false;
+        await UserService.AnswerCall(callingUser);
+        await UserService.ConnectToUser(callingUser, useVideo, _callingClientConnectionid);
+    }
+
+    private async Task RejectCall()
+    {
+        Console.WriteLine($"Rejecting call from {callingUser}");
+        isCalling = false;
+        showIncomingCallDialog = false;
+        await UserService.RejectCall(callingUser);
+        callingUser = null;
+        _callingClientConnectionid = null;
+        _answeringClientConnectionid = null;
+        UserService.ClearCallingClientConnectionId();
+        UserService.ClearAnsweringClientConnectionId();
+        receivingUser = null;
     }
 
     private async Task EndCall()
     {
         Console.WriteLine("Ending call");
-        if (!string.IsNullOrEmpty(currentCallUser))
+        var remoteUser = !string.IsNullOrEmpty(receivingUser) && UserService.CurrentUser.UserName != receivingUser ? receivingUser : callingUser;
+        if ( !string.IsNullOrEmpty(remoteUser))
         {
-            await UserService.EndCall(currentCallUser);
-            currentCallUser = null;
+            await UserService.EndCall(remoteUser);
+            receivingUser = null;
+            callingUser = null;
+            isCalling = false;
         }
-
         await JSRuntime.InvokeVoidAsync("webrtc.endCall");
         isInCall = false;
+        UserService.ClearCallingClientConnectionId();
+        UserService.ClearAnsweringClientConnectionId();
+
     }
 
     private void HandleCallStarted(string userName)
     {
         Console.WriteLine($"Call started with {userName}");
-        currentCallUser = userName;
+        receivingUser = userName;
         isInCall = true;
+        isCalling = false;
+        callMessage = null;
         InvokeAsync(StateHasChanged);
     }
 
     private void HandleCallEnded(string userName)
     {
         Console.WriteLine($"Call ended by {userName}");
-        currentCallUser = null;
+        receivingUser = null;
         isInCall = false;
+        isCalling = false;
+        callMessage = null;
+        callingUser = null;
+        _callingClientConnectionid = null;
+        JSRuntime.InvokeVoidAsync("webrtc.endCall");
+        UserService.ClearCallingClientConnectionId();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleIncomingCall(string caller, bool isVideoCall, string callerConnectionId)
+    {
+        useVideo = isVideoCall;
+        requestVideoCall = isVideoCall;
+        var callType = isVideoCall ? "video" : "audio";
+        callingUser = caller;
+        _callingClientConnectionid = callerConnectionId;
+        receivingUser = UserService.CurrentUser.UserName;
+        incomingCallMessage = $"Incoming {callType} call from {caller}";
+        showIncomingCallDialog = true;
         InvokeAsync(StateHasChanged);
     }
 
@@ -89,6 +229,34 @@
         UserService.OnUsersUpdated -= StateHasChanged;
         UserService.OnCallStarted -= HandleCallStarted;
         UserService.OnCallEnded -= HandleCallEnded;
+        UserService.OnIncomingCall -= HandleIncomingCall;
     }
 
+    private async Task ToggleFullScreen()
+    {
+        await JSRuntime.InvokeVoidAsync("toggleFullScreen", "videoContainer");
+    }
+    private async Task StopVideo()
+    {
+        await JSRuntime.InvokeVoidAsync("webrtc.stopVideo");
+    }
+
+    private async Task MuteAudio()
+    {
+        await JSRuntime.InvokeVoidAsync("webrtc.muteAudio");
+    }
+
+    private async Task TakeScreenshot()
+    {
+        await JSRuntime.InvokeVoidAsync("webrtc.takeScreenshot");
+    }
+    private async Task ShareScreen()
+    {
+        await JSRuntime.InvokeVoidAsync("webrtc.shareScreen");
+    }
+
+    private async Task StopScreenShare()
+    {
+        await JSRuntime.InvokeVoidAsync("webrtc.stopScreenShare");
+    }
 }

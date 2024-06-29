@@ -16,7 +16,9 @@
         <AuthorizeView>
             <Authorized>
                 <MudIconButton Icon="@Icons.Material.Filled.People" OnClick="NavigateToUsers" />
+                <MudIconButton Icon="@Icons.Material.Filled.Person2" Href="About" />
                 <MudIconButton Icon="@Icons.Material.Filled.Logout" OnClick="Logout"/>
+                
             </Authorized>
             <NotAuthorized>
                 <MudIconButton Icon="@Icons.Material.Filled.Login" OnClick="NavigateToLogin"/>
