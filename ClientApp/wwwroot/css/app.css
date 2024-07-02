@@ -9,6 +9,7 @@ video.local-video {
     width: 200px;
     height: 150px;
     z-index: 10;
+    cursor: move;
     border: 2px solid white;
 }
 
@@ -17,6 +18,7 @@ video.remote-video {
     height: 100%;
     object-fit: cover;
 }
+
 
 .toolbar {
     display: flex;

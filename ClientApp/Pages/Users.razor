@@ -7,16 +7,17 @@
 @inject ISnackbar Snackbar
 <div id="connectionType"></div>
 <div class="video-container" id="videoContainer">
-    <video id="localVideo" autoplay playsinline class="local-video"></video>
+
+    <video id="localVideo" autoplay playsinline class="local-video minimized" hidden="@isLocalVideoMinimized" @ondblclick="SwapVideoStreams"></video>
     <video id="remoteVideo" autoplay playsinline class="remote-video"></video>
     @if (isInCall)
     {
         <div class="toolbar" id="toolbar">
             <MudTooltip Text="@(isVideoStopped ? "Start Video" : "Stop Video")">
-                <MudIconButton Icon="@(isVideoStopped ? Icons.Material.Filled.Videocam : Icons.Material.Filled.VideocamOff)" Size="Size.Small" Id="stopVideoButton" @onclick="StopVideo"/>
+                <MudIconButton Icon="@(isVideoStopped ? Icons.Material.Filled.VideocamOff : Icons.Material.Filled.Videocam)" Color="@(isVideoStopped ? Color.Default : Color.Error)" Size="Size.Small" Id="stopVideoButton" @onclick="StopVideo"/>
             </MudTooltip>
             <MudTooltip Text="@(isAudioMuted ? "Unmute" : "Mute")">
-                <MudIconButton Icon="@(isAudioMuted ? Icons.Material.Filled.Mic : Icons.Material.Filled.MicOff)" Size="Size.Small" Id="muteAudioButton" @onclick="MuteAudio"/>
+                <MudIconButton Icon="@(isAudioMuted ? Icons.Material.Filled.MicOff : Icons.Material.Filled.Mic)" Color="@(isAudioMuted ? Color.Default : Color.Error)" Size="Size.Small" Id="muteAudioButton" @onclick="MuteAudio"/>
             </MudTooltip>
             <MudTooltip Text="Take Screenshot">
                 <MudIconButton Icon="@Icons.Material.Filled.CameraAlt" Size="Size.Small" @onclick="TakeScreenshot"/>
@@ -24,13 +25,25 @@
             @if (isScreenShared)
             {
                 <MudTooltip Text="Stop Screen Share">
-                    <MudIconButton Icon="@Icons.Material.Filled.StopScreenShare" Size="Size.Small" Id="stopScreenShareButton" @onclick="StopScreenShare"/>
+                    <MudIconButton Icon="@Icons.Material.Filled.StopScreenShare" Size="Size.Small" Color="Color.Error" Id="stopScreenShareButton" @onclick="StopScreenShare"/>
                 </MudTooltip>
             }
             else
             {
                 <MudTooltip Text="Share Screen">
                     <MudIconButton Icon="@Icons.Material.Filled.ScreenShare" Size="Size.Small" Id="shareScreenButton" @onclick="ShareScreen"/>
+                </MudTooltip>
+            }
+            @if (isLocalVideoMinimized)
+            {
+                <MudTooltip Text="Maximize Video">
+                    <MudIconButton Icon="@Icons.Material.Filled.Maximize" Color="Color.Error"  Size="Size.Small" Id="maximizeVideoButton" @onclick="() => { isLocalVideoMinimized = false; }"/>
+                </MudTooltip>
+            }
+            else
+            {
+                <MudTooltip Text="Minimize Video">
+                    <MudIconButton Icon="@Icons.Material.Filled.Minimize" Size="Size.Small" Id="minimizeVideoButton" @onclick="() => { isLocalVideoMinimized = true; }"/>
                 </MudTooltip>
             }
             <MudTooltip Text="Toggle Full Screen">
@@ -118,6 +131,7 @@
     private bool isScreenShared = false;
     private bool isVideoStopped = false;
     private bool isAudioMuted = false;
+    private bool isLocalVideoMinimized = false;
 
 
     protected override async Task OnInitializedAsync()
@@ -132,6 +146,7 @@
         
         //await UserService.InitializeAsync(Navigation.BaseUri, LocalStorage);
         await JSRuntime.InvokeVoidAsync("initializeUserService", DotNetObjectReference.Create(UserService));
+        await JSRuntime.InvokeVoidAsync("initializeDragAndDrop");
     }
 
     private void HandleShowSnackbar(string obj)
@@ -336,7 +351,11 @@
         await file.OpenReadStream(maxFileSize).ReadAsync(buffer);
         await JSRuntime.InvokeVoidAsync("webrtc.sendFile", file.Name, file.Size, buffer);
     }
-    
-    
+
+
+    private async Task SwapVideoStreams()
+    {
+        await JSRuntime.InvokeVoidAsync("webrtc.swapVideoStreams");
+    }
 
 }

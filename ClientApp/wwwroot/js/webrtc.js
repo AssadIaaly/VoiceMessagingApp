@@ -11,6 +11,25 @@ let fileName = "";
 let chunksReceived = {};
 let sendingFile = false;
 let sendQueue = [];
+let localVideoElement;
+let remoteVideoElement;
+
+let isDragging = false;
+let dragStartX, dragStartY, initialX, initialY;
+
+function swapVideoStreams() {
+    if (!localVideoElement || !remoteVideoElement) {
+        localVideoElement = document.getElementById('localVideo');
+        remoteVideoElement = document.getElementById('remoteVideo');
+    }
+    if (localVideoElement && remoteVideoElement) {
+        let tempStream = localVideoElement.srcObject;
+        localVideoElement.srcObject = remoteVideoElement.srcObject;
+        remoteVideoElement.srcObject = tempStream;
+    } else {
+        console.error("Video elements not found");
+    }
+}
 
 const servers = {
     iceServers: [
@@ -38,8 +57,40 @@ function initializeUserService(dotNetObjectReference) {
         stopScreenShare: stopScreenShare,
         toggleFullScreen: toggleFullScreen,
         sendFile: sendFile,
+        swapVideoStreams: swapVideoStreams,
+        initializeDragAndDrop: initializeDragAndDrop,
         dotNetObjectReference: dotNetObjectReference
     };
+}
+
+function initializeDragAndDrop() {
+    localVideoElement = document.getElementById('localVideo');
+    remoteVideoElement = document.getElementById('remoteVideo');
+
+    localVideoElement.addEventListener('mousedown', startDragging);
+    document.addEventListener('mouseup', stopDragging);
+    document.addEventListener('mousemove', drag);
+}
+
+function startDragging(event) {
+    isDragging = true;
+    dragStartX = event.clientX;
+    dragStartY = event.clientY;
+    initialX = localVideoElement.offsetLeft;
+    initialY = localVideoElement.offsetTop;
+}
+
+function stopDragging() {
+    isDragging = false;
+}
+
+function drag(event) {
+    if (isDragging) {
+        const deltaX = event.clientX - dragStartX;
+        const deltaY = event.clientY - dragStartY;
+        localVideoElement.style.left = initialX + deltaX + 'px';
+        localVideoElement.style.top = initialY + deltaY + 'px';
+    }
 }
 
 async function startCall(userName, useVideo) {
