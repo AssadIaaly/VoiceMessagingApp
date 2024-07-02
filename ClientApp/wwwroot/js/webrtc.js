@@ -3,9 +3,14 @@ let remoteConnection;
 let localStream;
 let remoteStream;
 let remoteIceCandidates = [];
-let screenStream;
-let isVideoStopped = false;
-let isAudioMuted = false;
+let screenStream;let dataChannel;
+let receiveBuffer = [];
+let receivedSize = 0;
+const chunkSize = 16384*2*2; // 16KB chunks
+let fileName = "";
+let chunksReceived = {};
+let sendingFile = false;
+let sendQueue = [];
 
 const servers = {
     iceServers: [
@@ -32,6 +37,7 @@ function initializeUserService(dotNetObjectReference) {
         shareScreen: shareScreen,
         stopScreenShare: stopScreenShare,
         toggleFullScreen: toggleFullScreen,
+        sendFile: sendFile,
         dotNetObjectReference: dotNetObjectReference
     };
 }
@@ -40,6 +46,11 @@ async function startCall(userName, useVideo) {
     console.log(`Starting call to ${userName}`);
     document.getElementById('connectionType').innerText = 'Loading...';
     localConnection = new RTCPeerConnection(servers);
+
+    dataChannel = localConnection.createDataChannel("fileTransfer");
+    setupDataChannel(dataChannel);
+    console.log("Data channel created:", dataChannel)
+    
     localConnection.onicecandidate = ({ candidate }) => {
         if (candidate) {
             console.log("Local ICE candidate:", candidate);
@@ -90,9 +101,16 @@ async function startCall(userName, useVideo) {
     }
 }
 
-async function receiveOffer(userName, offer) {
+async function receiveOffer(userName,  useVideo, offer) {
     console.log(`Receiving offer from ${userName}:`, offer);
     remoteConnection = new RTCPeerConnection(servers);
+
+    remoteConnection.ondatachannel = (event) => {
+        dataChannel = event.channel;
+        setupDataChannel(dataChannel);
+        console.log("Data channel received:", dataChannel)
+    };
+    
     remoteConnection.onicecandidate = ({ candidate }) => {
         if (candidate) {
             console.log("Remote ICE candidate:", candidate);
@@ -126,7 +144,8 @@ async function receiveOffer(userName, offer) {
     };
 
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const mediaConstraints = { video: useVideo, audio: true };
+        const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
         console.log("Media devices accessed:", stream);
         document.getElementById('localVideo').srcObject = stream;
         localStream = stream; // Save the local stream
@@ -210,32 +229,20 @@ function endCall() {
     document.getElementById('connectionType').innerText = '';
 }
 
-function stopVideo() {
+function stopVideo (isVideoStopped) {
     if (localStream) {
         const videoTracks = localStream.getVideoTracks();
-        isVideoStopped = !isVideoStopped;
         videoTracks.forEach(track => track.enabled = !isVideoStopped);
-        updateButtonState('stopVideoButton', isVideoStopped);
     }
 }
 
-function muteAudio() {
+function muteAudio(isAudioMuted) {
     if (localStream) {
         const audioTracks = localStream.getAudioTracks();
-        isAudioMuted = !isAudioMuted;
         audioTracks.forEach(track => track.enabled = !isAudioMuted);
-        updateButtonState('muteAudioButton', isAudioMuted);
     }
 }
 
-function updateButtonState(buttonId, state) {
-    const button = document.getElementById(buttonId);
-    if (state) {
-        button.classList.add('active');
-    } else {
-        button.classList.remove('active');
-    }
-}
 
 function takeScreenshot() {
     const video = document.getElementById('remoteVideo');
@@ -250,11 +257,6 @@ function takeScreenshot() {
     a.click();
 }
 function shareScreen() {
-    // if (!localConnection) {
-    //     alert('No active connection. Start a call first.');
-    //     return;
-    // }
-
     navigator.mediaDevices.getDisplayMedia({ video: true }).then(stream => {
         console.log("Screen sharing started:", stream);
         screenStream = stream;
@@ -301,3 +303,89 @@ function toggleFullScreen(elementId) {
         document.exitFullscreen();
     }
 }
+
+function setupDataChannel(channel) {
+    channel.binaryType = "arraybuffer";
+    channel.onmessage =  (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === 'chunk') {
+            receiveFileChunk(message);
+        }
+    };
+    channel.onbufferedamountlow = () => {
+        while (sendQueue.length > 0 && dataChannel.bufferedAmount < dataChannel.bufferedAmountLowThreshold) {
+            const chunkData = sendQueue.shift();
+            dataChannel.send(JSON.stringify(chunkData));
+        }
+    };
+}
+
+function sendFile(name, size, buffer) {
+    let offset = 0;
+    chunkCounter = 0;
+
+    function sendNextChunk() {
+        if (offset < buffer.byteLength) {
+            let chunk = buffer.slice(offset, offset + chunkSize);
+            const chunkData = {
+                type: 'chunk',
+                name: name,
+                size: size,
+                chunkNumber: chunkCounter,
+                data: Array.from(new Uint8Array(chunk))
+            };
+
+            try {
+                dataChannel.send(JSON.stringify(chunkData));
+                offset += chunkSize;
+                chunkCounter++;
+            } catch (error) {
+                if (error.name === "NetworkError") {
+                    sendQueue.push(chunkData);
+                    setTimeout(sendNextChunk, 100); // Wait before retrying
+                } else {
+                    console.log('Failed to send chunk:', error);
+                }
+            }
+
+            if (offset < buffer.byteLength) {
+                setTimeout(sendNextChunk, 0);
+            }
+        }
+    }
+
+    sendNextChunk();
+}
+
+async function receiveFileChunk(message) {
+    if (!fileName) {
+        fileName = message.name;
+        expectedFileSize = message.size;
+        await webrtc.dotNetObjectReference.invokeMethodAsync('ShowSnackbar', `Receiving file: ${fileName}`);
+    }
+
+    chunksReceived[message.chunkNumber] = new Uint8Array(message.data).buffer;
+    receivedSize += message.data.length;
+
+    if (receivedSize === expectedFileSize) {
+        const orderedChunks = [];
+        for (let i = 0; i < Object.keys(chunksReceived).length; i++) {
+            orderedChunks.push(chunksReceived[i]);
+        }
+        const file = new Blob(orderedChunks);
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        await webrtc.dotNetObjectReference.invokeMethodAsync('ShowSnackbar', `Received file: ${fileName}`);
+
+        // Reset buffer and size
+        receiveBuffer = [];
+        receivedSize = 0;
+        fileName = "";
+        chunksReceived = {};
+    }
+    
+}
+

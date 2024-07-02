@@ -10,6 +10,7 @@ public class UserService
     public UserInfo CurrentUser { get; private set; }
     private string _callingClientConnectionId = null;
     private string _answeringClientConnectionId = null;
+    private bool _useVideo=true;
     public List<List<UserInfo>> ConnectedUsers { get; private set; } = new List<List<UserInfo>>();
 
     public event Action OnUsersUpdated;
@@ -17,6 +18,7 @@ public class UserService
     public event Action<string> OnCallEnded;
     public event Action<string, bool, string> OnIncomingCall;
     public event Action<string> OnCallRejected;
+    public event Action<string> OnShowSnackbar;
     public event Action<string,string> OnCallAnswered;
 
     public UserService(IJSRuntime jsRuntime)
@@ -59,7 +61,7 @@ public class UserService
         _hubConnection.On<string, string>("ReceiveOffer", async (user, offer) =>
         {
             Console.WriteLine($"Received offer from {user}");
-            await _jsRuntime.InvokeVoidAsync("webrtc.receiveOffer", user, offer);
+            await _jsRuntime.InvokeVoidAsync("webrtc.receiveOffer", user, _useVideo, offer);
             OnCallStarted?.Invoke(user);
         });
 
@@ -97,6 +99,7 @@ public class UserService
 
     public async Task InitiateCall(string userName, bool useVideo)
     {
+        _useVideo = useVideo;
         await _hubConnection.InvokeAsync("InitiateCall", userName, useVideo);
     }
 
@@ -140,6 +143,12 @@ public class UserService
             await _hubConnection.InvokeAsync("SendIceCandidate", userName,_callingClientConnectionId, candidate);
         if (!string.IsNullOrWhiteSpace(_answeringClientConnectionId))
             await _hubConnection.InvokeAsync("SendIceCandidate", userName,_answeringClientConnectionId, candidate);
+    }
+    
+    [JSInvokable]
+    public void ShowSnackbar(string message)
+    {
+        OnShowSnackbar?.Invoke(message);
     }
 
     public void ClearCallingClientConnectionId() => _callingClientConnectionId = null;

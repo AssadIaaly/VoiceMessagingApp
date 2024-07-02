@@ -4,6 +4,7 @@
 @inject IJSRuntime JSRuntime
 @inject NavigationManager Navigation
 @inject Blazored.LocalStorage.ILocalStorageService LocalStorage
+@inject ISnackbar Snackbar
 <div id="connectionType"></div>
 <div class="video-container" id="videoContainer">
     <video id="localVideo" autoplay playsinline class="local-video"></video>
@@ -11,13 +12,44 @@
     @if (isInCall)
     {
         <div class="toolbar" id="toolbar">
-            <MudIconButton Icon="@Icons.Material.Filled.VideocamOff" Size="Size.Small" Id="stopVideoButton" @onclick="StopVideo" />
-            <MudIconButton Icon="@Icons.Material.Filled.MicOff" Size="Size.Small" Id="muteAudioButton" @onclick="MuteAudio" />
-            <MudIconButton Icon="@Icons.Material.Filled.CameraAlt" Size="Size.Small" @onclick="TakeScreenshot" />
-            <MudIconButton Icon="@Icons.Material.Filled.ScreenShare" Size="Size.Small" Id="shareScreenButton" @onclick="ShareScreen" />
-            <MudIconButton Icon="@Icons.Material.Filled.StopScreenShare" Size="Size.Small" Id="stopScreenShareButton" @onclick="StopScreenShare" />
-            <MudIconButton Icon="@Icons.Material.Filled.Fullscreen" Size="Size.Small" Id="fullscreenButton" @onclick="ToggleFullScreen" />
-            <MudIconButton Icon="@Icons.Material.Filled.CallEnd" Color="Color.Error" Size="Size.Small" @onclick="EndCall" />
+            <MudTooltip Text="@(isVideoStopped ? "Start Video" : "Stop Video")">
+                <MudIconButton Icon="@(isVideoStopped ? Icons.Material.Filled.Videocam : Icons.Material.Filled.VideocamOff)" Size="Size.Small" Id="stopVideoButton" @onclick="StopVideo"/>
+            </MudTooltip>
+            <MudTooltip Text="@(isAudioMuted ? "Unmute" : "Mute")">
+                <MudIconButton Icon="@(isAudioMuted ? Icons.Material.Filled.Mic : Icons.Material.Filled.MicOff)" Size="Size.Small" Id="muteAudioButton" @onclick="MuteAudio"/>
+            </MudTooltip>
+            <MudTooltip Text="Take Screenshot">
+                <MudIconButton Icon="@Icons.Material.Filled.CameraAlt" Size="Size.Small" @onclick="TakeScreenshot"/>
+            </MudTooltip>
+            @if (isScreenShared)
+            {
+                <MudTooltip Text="Stop Screen Share">
+                    <MudIconButton Icon="@Icons.Material.Filled.StopScreenShare" Size="Size.Small" Id="stopScreenShareButton" @onclick="StopScreenShare"/>
+                </MudTooltip>
+            }
+            else
+            {
+                <MudTooltip Text="Share Screen">
+                    <MudIconButton Icon="@Icons.Material.Filled.ScreenShare" Size="Size.Small" Id="shareScreenButton" @onclick="ShareScreen"/>
+                </MudTooltip>
+            }
+            <MudTooltip Text="Toggle Full Screen">
+                <MudIconButton Icon="@Icons.Material.Filled.Fullscreen" Size="Size.Small" Id="fullscreenButton" @onclick="ToggleFullScreen"/>
+            </MudTooltip>
+            <MudTooltip Text="Upload File">
+                <MudFileUpload T="IBrowserFile" FilesChanged="UploadFiles" Style="margin-top:0">
+                    <ButtonTemplate>
+                        <MudIconButton HtmlTag="label"
+                                       Icon="@Icons.Material.Filled.FileUpload"
+                                       Size="Size.Small"
+                                       for="@context.Id">
+                        </MudIconButton>
+                    </ButtonTemplate>
+                </MudFileUpload>
+            </MudTooltip>
+            <MudTooltip Text="End Call">
+                <MudIconButton Icon="@Icons.Material.Filled.CallEnd" Color="Color.Error" Size="Size.Small" @onclick="EndCall"/>
+            </MudTooltip>
         </div>
     }
 </div>
@@ -44,9 +76,11 @@
                     </MudGrid>
                 </MudListItem>
             }
-            
         }
     </MudList>
+
+    <input type="file" id="fileInput" style="display: none;"/>
+    <button id="sendFileButton" onclick="sendFile()">Send File</button>
 
     @if (isCalling)
     {
@@ -58,7 +92,7 @@
             <MudText Typo="Typo.h6">@incomingCallMessage</MudText>
             @if (requestVideoCall)
             {
-            <MudCheckBox @bind-Value="useVideo">Use Video</MudCheckBox>
+                <MudCheckBox @bind-Value="useVideo">Use Video</MudCheckBox>
             }
         </DialogContent>
         <DialogActions>
@@ -81,6 +115,11 @@
     private string _callingClientConnectionid = null;
     private string _answeringClientConnectionid = null;
 
+    private bool isScreenShared = false;
+    private bool isVideoStopped = false;
+    private bool isAudioMuted = false;
+
+
     protected override async Task OnInitializedAsync()
     {
         UserService.OnUsersUpdated += StateHasChanged;
@@ -89,8 +128,15 @@
         UserService.OnIncomingCall += HandleIncomingCall;
         UserService.OnCallRejected += HandleCallRejected;
         UserService.OnCallAnswered += HandleCallAnswered;
+        UserService.OnShowSnackbar += HandleShowSnackbar;
+        
         //await UserService.InitializeAsync(Navigation.BaseUri, LocalStorage);
         await JSRuntime.InvokeVoidAsync("initializeUserService", DotNetObjectReference.Create(UserService));
+    }
+
+    private void HandleShowSnackbar(string obj)
+    {
+        Snackbar.Add(obj, Severity.Success);
     }
 
     private void HandleCallAnswered(string username, string answeringClientConnectionId)
@@ -99,6 +145,7 @@
         {
             showIncomingCallDialog = false;
         }
+
         if (answeringClientConnectionId == UserService.CurrentUser.ConnectionId)
         {
             _answeringClientConnectionid = answeringClientConnectionId;
@@ -107,13 +154,11 @@
         else
         {
             _answeringClientConnectionid = null;
-
         }
+
         callMessage = null;
         isCalling = false;
-        callingUser = null;
         _callingClientConnectionid = null;
-        receivingUser = null;
         InvokeAsync(StateHasChanged);
     }
 
@@ -123,15 +168,16 @@
         {
             showIncomingCallDialog = false;
         }
+
         callMessage = null;
         isCalling = false;
         callingUser = null;
         _callingClientConnectionid = null;
         receivingUser = null;
+        _answeringClientConnectionid = null;
         UserService.ClearCallingClientConnectionId();
         UserService.ClearAnsweringClientConnectionId();
         InvokeAsync(StateHasChanged);
-       
     }
 
     private async Task InitiateCall(UserInfo user)
@@ -151,6 +197,7 @@
         isInCall = true;
         isCalling = false;
         showIncomingCallDialog = false;
+        receivingUser = UserService.CurrentUser.UserName;
         await UserService.AnswerCall(callingUser);
         await UserService.ConnectToUser(callingUser, useVideo, _callingClientConnectionid);
     }
@@ -172,19 +219,25 @@
     private async Task EndCall()
     {
         Console.WriteLine("Ending call");
-        var remoteUser = !string.IsNullOrEmpty(receivingUser) && UserService.CurrentUser.UserName != receivingUser ? receivingUser : callingUser;
-        if ( !string.IsNullOrEmpty(remoteUser))
+        if (!string.IsNullOrEmpty(callingUser))
         {
-            await UserService.EndCall(remoteUser);
-            receivingUser = null;
-            callingUser = null;
-            isCalling = false;
+            Console.WriteLine($"Ending call with {callingUser}");
+            await UserService.EndCall(callingUser);
         }
+
+        if (!string.IsNullOrEmpty(receivingUser))
+        {
+            Console.WriteLine($"Ending call with {receivingUser}");
+            await UserService.EndCall(receivingUser);
+        }
+
+        receivingUser = null;
+        callingUser = null;
+        isCalling = false;
         await JSRuntime.InvokeVoidAsync("webrtc.endCall");
         isInCall = false;
         UserService.ClearCallingClientConnectionId();
         UserService.ClearAnsweringClientConnectionId();
-
     }
 
     private void HandleCallStarted(string userName)
@@ -205,9 +258,12 @@
         isCalling = false;
         callMessage = null;
         callingUser = null;
+        receivingUser = null;
+        _answeringClientConnectionid = null;
         _callingClientConnectionid = null;
         JSRuntime.InvokeVoidAsync("webrtc.endCall");
         UserService.ClearCallingClientConnectionId();
+        UserService.ClearAnsweringClientConnectionId();
         InvokeAsync(StateHasChanged);
     }
 
@@ -236,27 +292,51 @@
     {
         await JSRuntime.InvokeVoidAsync("toggleFullScreen", "videoContainer");
     }
+
     private async Task StopVideo()
     {
-        await JSRuntime.InvokeVoidAsync("webrtc.stopVideo");
+        isVideoStopped = !isVideoStopped;
+        await JSRuntime.InvokeAsync<object>("webrtc.stopVideo", isVideoStopped);
     }
 
     private async Task MuteAudio()
     {
-        await JSRuntime.InvokeVoidAsync("webrtc.muteAudio");
+        isAudioMuted = !isAudioMuted;
+        await JSRuntime.InvokeAsync<object>("webrtc.muteAudio", isAudioMuted);
     }
 
     private async Task TakeScreenshot()
     {
         await JSRuntime.InvokeVoidAsync("webrtc.takeScreenshot");
     }
+
     private async Task ShareScreen()
     {
+        isScreenShared = true;
         await JSRuntime.InvokeVoidAsync("webrtc.shareScreen");
     }
 
     private async Task StopScreenShare()
     {
+        isScreenShared = false;
         await JSRuntime.InvokeVoidAsync("webrtc.stopScreenShare");
     }
+
+    private async Task UploadFiles(IBrowserFile file)
+    {
+        const long maxFileSize = 100 * 1024 * 1024; // 100 MB in bytes
+
+        if (file.Size > maxFileSize)
+        {
+            Console.WriteLine("File size exceeds the maximum limit of 100 MB.");
+            return;
+        }
+
+        var buffer = new byte[file.Size];
+        await file.OpenReadStream(maxFileSize).ReadAsync(buffer);
+        await JSRuntime.InvokeVoidAsync("webrtc.sendFile", file.Name, file.Size, buffer);
+    }
+    
+    
+
 }

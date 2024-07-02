@@ -127,8 +127,9 @@ public class UserHub : Hub
         {
             Console.WriteLine($"Sending ICE candidate from {Context.User.Identity.Name} to {userName}");
             if (userInfo.All(i => i.ConnectionId != connectionId))
-                throw new Exception("ConnectionId does not exist!");
-            await Clients.Client(connectionId).SendAsync("ReceiveIceCandidate", Context.User.Identity.Name, candidate);
+                Console.WriteLine("ConnectionId does not exist!");
+            else
+                await Clients.Client(connectionId).SendAsync("ReceiveIceCandidate", Context.User.Identity.Name, candidate);
         }
     }
 
@@ -140,16 +141,21 @@ public class UserHub : Hub
             var users = userInfo.Select(u => u.ConnectionId).ToList();
             if (users.Count > 0)
                 await Clients.Clients(users).SendAsync("EndCall", Context.User.Identity.Name);
-            //return Clients.Client(userInfo.ConnectionId).SendAsync("EndCall", Context.User.Identity.Name);
         }
     }
     public async Task AnswerCall(string callingUser)
     {
+        var userName = Context.User.Identity.Name;
+        var connectionId = Context.ConnectionId;
+        
         if (ConnectedUsers.TryGetValue(callingUser, out var userInfos))
         {
             Console.WriteLine("Answering call from " + callingUser + " to " + Context.User.Identity.Name + " with connectionId " + Context.ConnectionId);
-            var connectionId = Context.ConnectionId;
             await Clients.Clients(userInfos.Select(i=>i.ConnectionId)).SendAsync("CallAnswered", Context.User.Identity.Name, connectionId);
+        }
+        if (ConnectedUsers.TryGetValue(userName, out var userInfos2))
+        {
+            await Clients.Clients(userInfos2.Select(i=>i.ConnectionId)).SendAsync("CallAnswered", Context.User.Identity.Name, connectionId);
         }
     }
     private string GetClientType(string userAgent)
